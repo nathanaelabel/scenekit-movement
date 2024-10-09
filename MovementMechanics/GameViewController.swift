@@ -31,9 +31,11 @@ class GameViewController: UIViewController {
         // Start updating movement
         let displayLink = CADisplayLink(target: self, selector: #selector(update))
         displayLink.add(to: .current, forMode: .default)
-        
-        // Disable system gestures
-        disableSystemGestures()
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        forceDisableSystemGestures()
     }
     
     // Set up the SceneKit scene and the SCNView
@@ -59,6 +61,17 @@ class GameViewController: UIViewController {
         ])
     }
     
+    // Force disable system gestures, especially edge pan
+    func forceDisableSystemGestures() {
+        if let gestureRecognizers = self.view.window?.gestureRecognizers {
+            for recognizer in gestureRecognizers {
+                if recognizer is UIScreenEdgePanGestureRecognizer || recognizer is UIPanGestureRecognizer {
+                    recognizer.isEnabled = false
+                }
+            }
+        }
+    }
+    
     // Add player as a box with a camera node in front of it for first-person view
     func addPlayer() {
         let boxGeometry = SCNBox(width: 0.5, height: 1.8, length: 0.5, chamferRadius: 0)
@@ -80,13 +93,13 @@ class GameViewController: UIViewController {
         let buttonSize: CGFloat = 60
         let buttonSpacing: CGFloat = 20
         
-        // Add an overlay view for the buttons to ensure they're on top of SCNView
+        // Create an overlay for the buttons
         movementOverlay = UIView(frame: self.view.bounds)
-        movementOverlay.backgroundColor = .clear // Transparent background
+        movementOverlay.backgroundColor = .clear
         movementOverlay.isUserInteractionEnabled = true
         self.view.addSubview(movementOverlay)
         
-        // W Button (Move Forward)
+        // Add buttons as subviews
         let wButton = UIButton(frame: CGRect(x: self.view.frame.width / 2 - buttonSize / 2, y: self.view.frame.height - 200, width: buttonSize, height: buttonSize))
         wButton.backgroundColor = .blue
         wButton.setTitle("↑", for: .normal)
@@ -94,7 +107,7 @@ class GameViewController: UIViewController {
         wButton.addTarget(self, action: #selector(stopMoving), for: [.touchUpInside, .touchCancel])
         movementOverlay.addSubview(wButton)
         
-        // A Button (Move Left)
+        // Similar setup for A, S, D buttons
         let aButton = UIButton(frame: CGRect(x: wButton.frame.minX - buttonSize - buttonSpacing, y: wButton.frame.origin.y + buttonSize + buttonSpacing, width: buttonSize, height: buttonSize))
         aButton.backgroundColor = .blue
         aButton.setTitle("←", for: .normal)
@@ -102,7 +115,6 @@ class GameViewController: UIViewController {
         aButton.addTarget(self, action: #selector(stopMoving), for: [.touchUpInside, .touchCancel])
         movementOverlay.addSubview(aButton)
         
-        // S Button (Move Backward)
         let sButton = UIButton(frame: CGRect(x: wButton.frame.minX, y: wButton.frame.origin.y + buttonSize + buttonSpacing, width: buttonSize, height: buttonSize))
         sButton.backgroundColor = .blue
         sButton.setTitle("↓", for: .normal)
@@ -110,13 +122,15 @@ class GameViewController: UIViewController {
         sButton.addTarget(self, action: #selector(stopMoving), for: [.touchUpInside, .touchCancel])
         movementOverlay.addSubview(sButton)
         
-        // D Button (Move Right)
         let dButton = UIButton(frame: CGRect(x: wButton.frame.maxX + buttonSpacing, y: wButton.frame.origin.y + buttonSize + buttonSpacing, width: buttonSize, height: buttonSize))
         dButton.backgroundColor = .blue
         dButton.setTitle("→", for: .normal)
         dButton.addTarget(self, action: #selector(moveRight), for: .touchDown)
         dButton.addTarget(self, action: #selector(stopMoving), for: [.touchUpInside, .touchCancel])
         movementOverlay.addSubview(dButton)
+        
+        // Ensure buttons are brought to the front
+        self.view.bringSubviewToFront(movementOverlay)
     }
     
     // Button actions for movement
@@ -147,7 +161,7 @@ class GameViewController: UIViewController {
     
     // Update method to move the player smoothly
     @objc func update() {
-        let moveSpeed = movementSpeed * 0.1
+        let moveSpeed = movementSpeed * 0.5
         let move = SIMD3<Float>(direction.x * moveSpeed, 0, direction.z * moveSpeed)
         
         if move.x != 0 || move.z != 0 {
