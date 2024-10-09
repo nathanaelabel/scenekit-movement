@@ -10,107 +10,138 @@ import QuartzCore
 import SceneKit
 
 class GameViewController: UIViewController {
-
+    
+    var sceneView: SCNView!
+    var scene: SCNScene!
+    var cameraNode: SCNNode!
+    var playerNode: SCNNode!
+    var movementSpeed: Float = 2.0
+    var direction = SIMD3<Float>(0, 0, 0)
+    
     override func viewDidLoad() {
         super.viewDidLoad()
+        setupScene()
+        addPlayer()
+        setupMovementButtons()
         
-        // create a new scene
-        let scene = SCNScene(named: "art.scnassets/ship.scn")!
+        // Start updating movement
+        let displayLink = CADisplayLink(target: self, selector: #selector(update))
+        displayLink.add(to: .current, forMode: .default)
         
-        // create and add a camera to the scene
-        let cameraNode = SCNNode()
-        cameraNode.camera = SCNCamera()
-        scene.rootNode.addChildNode(cameraNode)
-        
-        // place the camera
-        cameraNode.position = SCNVector3(x: 0, y: 0, z: 15)
-        
-        // create and add a light to the scene
-        let lightNode = SCNNode()
-        lightNode.light = SCNLight()
-        lightNode.light!.type = .omni
-        lightNode.position = SCNVector3(x: 0, y: 10, z: 10)
-        scene.rootNode.addChildNode(lightNode)
-        
-        // create and add an ambient light to the scene
-        let ambientLightNode = SCNNode()
-        ambientLightNode.light = SCNLight()
-        ambientLightNode.light!.type = .ambient
-        ambientLightNode.light!.color = UIColor.darkGray
-        scene.rootNode.addChildNode(ambientLightNode)
-        
-        // retrieve the ship node
-        let ship = scene.rootNode.childNode(withName: "ship", recursively: true)!
-        
-        // animate the 3d object
-        ship.runAction(SCNAction.repeatForever(SCNAction.rotateBy(x: 0, y: 2, z: 0, duration: 1)))
-        
-        // retrieve the SCNView
-        let scnView = self.view as! SCNView
-        
-        // set the scene to the view
-        scnView.scene = scene
-        
-        // allows the user to manipulate the camera
-        scnView.allowsCameraControl = true
-        
-        // show statistics such as fps and timing information
-        scnView.showsStatistics = true
-        
-        // configure the view
-        scnView.backgroundColor = UIColor.black
-        
-        // add a tap gesture recognizer
-        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
-        scnView.addGestureRecognizer(tapGesture)
+        // Disable edge system gestures (for devices with no home button)
+        disableSystemGestures()
     }
     
-    @objc
-    func handleTap(_ gestureRecognize: UIGestureRecognizer) {
-        // retrieve the SCNView
-        let scnView = self.view as! SCNView
+    // Set up the SceneKit scene and the SCNView
+    func setupScene() {
+        sceneView = self.view as? SCNView
+        sceneView.allowsCameraControl = false
+        sceneView.scene = SCNScene(named: "art.scnassets/MainScene.scn")
+        sceneView.scene?.physicsWorld.gravity = SCNVector3(0, -9.8, 0) // Apply gravity
+        scene = sceneView.scene
+    }
+    
+    // Add player as a box with a camera node in front of it for first-person view
+    func addPlayer() {
+        // Create a box to represent the player
+        let boxGeometry = SCNBox(width: 0.5, height: 1.8, length: 0.5, chamferRadius: 0)
+        playerNode = SCNNode(geometry: boxGeometry)
+        playerNode.physicsBody = SCNPhysicsBody(type: .dynamic, shape: SCNPhysicsShape(geometry: boxGeometry, options: nil))
+        playerNode.physicsBody?.isAffectedByGravity = true
+        playerNode.position = SCNVector3(0, 1.0, 0) // Slightly above the ground
+        scene.rootNode.addChildNode(playerNode)
         
-        // check what nodes are tapped
-        let p = gestureRecognize.location(in: scnView)
-        let hitResults = scnView.hitTest(p, options: [:])
-        // check that we clicked on at least one object
-        if hitResults.count > 0 {
-            // retrieved the first clicked object
-            let result = hitResults[0]
-            
-            // get its material
-            let material = result.node.geometry!.firstMaterial!
-            
-            // highlight it
-            SCNTransaction.begin()
-            SCNTransaction.animationDuration = 0.5
-            
-            // on completion - unhighlight
-            SCNTransaction.completionBlock = {
-                SCNTransaction.begin()
-                SCNTransaction.animationDuration = 0.5
-                
-                material.emission.contents = UIColor.black
-                
-                SCNTransaction.commit()
-            }
-            
-            material.emission.contents = UIColor.red
-            
-            SCNTransaction.commit()
-        }
+        // Create a camera node and position it in front of the box for first-person view
+        cameraNode = SCNNode()
+        cameraNode.camera = SCNCamera()
+        cameraNode.position = SCNVector3(0, 1.6, 0.5) // Slightly above and in front of the player box
+        playerNode.addChildNode(cameraNode)
+    }
+    
+    // Create movement buttons for iOS touch input
+    func setupMovementButtons() {
+        let buttonSize: CGFloat = 60
+        let buttonSpacing: CGFloat = 20
+        
+        // W Button (Move Forward)
+        let wButton = UIButton(frame: CGRect(x: self.view.frame.width / 2 - buttonSize / 2, y: self.view.frame.height - 200, width: buttonSize, height: buttonSize))
+        wButton.backgroundColor = .blue
+        wButton.setTitle("↑", for: .normal)
+        wButton.addTarget(self, action: #selector(moveForward), for: .touchDown)
+        wButton.addTarget(self, action: #selector(stopMoving), for: [.touchUpInside, .touchCancel])
+        self.view.addSubview(wButton)
+        
+        // A Button (Move Left)
+        let aButton = UIButton(frame: CGRect(x: wButton.frame.minX - buttonSize - buttonSpacing, y: wButton.frame.origin.y + buttonSize + buttonSpacing, width: buttonSize, height: buttonSize))
+        aButton.backgroundColor = .blue
+        aButton.setTitle("←", for: .normal)
+        aButton.addTarget(self, action: #selector(moveLeft), for: .touchDown)
+        aButton.addTarget(self, action: #selector(stopMoving), for: [.touchUpInside, .touchCancel])
+        self.view.addSubview(aButton)
+        
+        // S Button (Move Backward)
+        let sButton = UIButton(frame: CGRect(x: wButton.frame.minX, y: wButton.frame.origin.y + buttonSize + buttonSpacing, width: buttonSize, height: buttonSize))
+        sButton.backgroundColor = .blue
+        sButton.setTitle("↓", for: .normal)
+        sButton.addTarget(self, action: #selector(moveBackward), for: .touchDown)
+        sButton.addTarget(self, action: #selector(stopMoving), for: [.touchUpInside, .touchCancel])
+        self.view.addSubview(sButton)
+        
+        // D Button (Move Right)
+        let dButton = UIButton(frame: CGRect(x: wButton.frame.maxX + buttonSpacing, y: wButton.frame.origin.y + buttonSize + buttonSpacing, width: buttonSize, height: buttonSize))
+        dButton.backgroundColor = .blue
+        dButton.setTitle("→", for: .normal)
+        dButton.addTarget(self, action: #selector(moveRight), for: .touchDown)
+        dButton.addTarget(self, action: #selector(stopMoving), for: [.touchUpInside, .touchCancel])
+        self.view.addSubview(dButton)
+    }
+    
+    // Button actions for movement
+    @objc func moveForward() {
+        direction.z = -1
+    }
+    
+    @objc func moveBackward() {
+        direction.z = 1
+    }
+    
+    @objc func moveLeft() {
+        direction.x = -1
+    }
+    
+    @objc func moveRight() {
+        direction.x = 1
+    }
+    
+    @objc func stopMoving() {
+        direction = SIMD3<Float>(0, 0, 0)
+    }
+    
+    // Update method to move the player smoothly
+    @objc func update() {
+        let moveSpeed = movementSpeed * 0.1
+        let move = SIMD3<Float>(direction.x * moveSpeed, 0, direction.z * moveSpeed)
+        
+        playerNode.position.x += move.x
+        playerNode.position.z += move.z
+    }
+    
+    // Disable edge swipe system gestures
+    func disableSystemGestures() {
+        let gestureRecognizer = UIScreenEdgePanGestureRecognizer()
+        gestureRecognizer.isEnabled = false
+        self.view.gestureRecognizers?.forEach { $0.require(toFail: gestureRecognizer) }
+    }
+    
+    override var shouldAutorotate: Bool {
+        return false
     }
     
     override var prefersStatusBarHidden: Bool {
         return true
     }
     
-    override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
-        if UIDevice.current.userInterfaceIdiom == .phone {
-            return .allButUpsideDown
-        } else {
-            return .all
-        }
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
     }
-
 }
