@@ -76,9 +76,14 @@ class GameViewController: UIViewController {
     func addPlayer() {
         let boxGeometry = SCNBox(width: 0.5, height: 1.8, length: 0.5, chamferRadius: 0)
         playerNode = SCNNode(geometry: boxGeometry)
-        playerNode.physicsBody = SCNPhysicsBody(type: .dynamic, shape: SCNPhysicsShape(geometry: boxGeometry, options: nil))
-        playerNode.physicsBody?.isAffectedByGravity = true
+        
+        // Use a kinematic physics body for manual movement while respecting collisions
+        let physicsBody = SCNPhysicsBody(type: .kinematic, shape: SCNPhysicsShape(geometry: boxGeometry, options: nil))
+        
+        // No need to worry about gravity or damping for a kinematic body
+        playerNode.physicsBody = physicsBody
         playerNode.position = SCNVector3(0, 1.0, 0) // Slightly above the ground
+        
         scene.rootNode.addChildNode(playerNode)
         
         // Create a camera node and position it in front of the box for first-person view
@@ -159,15 +164,16 @@ class GameViewController: UIViewController {
         print("Stopped moving")
     }
     
-    // Update method to move the player smoothly
     @objc func update() {
-        let moveSpeed = movementSpeed * 0.5
+        // Move player using manual control with the kinematic physics body
+        let moveSpeed = movementSpeed * 0.1
         let move = SIMD3<Float>(direction.x * moveSpeed, 0, direction.z * moveSpeed)
-        
+
         if move.x != 0 || move.z != 0 {
             print("Player moving to position x: \(move.x), z: \(move.z)")
         }
-        
+
+        // Manually update the position of the kinematic body
         playerNode.position.x += move.x
         playerNode.position.z += move.z
     }
