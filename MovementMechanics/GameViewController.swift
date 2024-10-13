@@ -13,26 +13,31 @@ class GameViewController: UIViewController {
     
     var sceneView: CustomSCNView!
     var scene: SCNScene!
-    var cameraNode: SCNNode!
-    var playerNode: SCNNode!
+    var entities = [Entity]()
+    
+    // Component storages
+    var positionComponents = [UUID: PositionComponent]()
+    var movementComponents = [UUID: MovementComponent]()
+    var cameraComponents = [UUID: CameraComponent]()
+    
+    // Systems
+    var movementSystem = MovementSystem()
+    var cameraSystem = CameraSystem()
+    
+    // Player entity
+    var player: Entity!
+    
+    // Button
     var movementOverlay: UIView!
-    var movementSpeed: Float = 2.0
-    var direction = SIMD3<Float>(0, 0, 0)
     
     override func viewDidLoad() {
         super.viewDidLoad()
         setupScene()
-        addPlayer()
-        sceneView.pointOfView = cameraNode
+        setupEntities()
         setupMovementButtons()
         
         let displayLink = CADisplayLink(target: self, selector: #selector(update))
         displayLink.add(to: .current, forMode: .default)
-    }
-    
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        forceDisableSystemGestures()
     }
     
     func setupScene() {
@@ -55,33 +60,30 @@ class GameViewController: UIViewController {
         ])
     }
     
-    func forceDisableSystemGestures() {
-        if let gestureRecognizers = self.view.window?.gestureRecognizers {
-            for recognizer in gestureRecognizers {
-                if recognizer is UIScreenEdgePanGestureRecognizer || recognizer is UIPanGestureRecognizer {
-                    recognizer.isEnabled = false
-                }
-            }
-        }
-    }
-    
-    func addPlayer() {
-        let boxGeometry = SCNBox(width: 0.5, height: 1.8, length: 0.5, chamferRadius: 0)
-        playerNode = SCNNode(geometry: boxGeometry)
+    func setupEntities() {
+        // Create player entity
+        player = Entity()
+        entities.append(player)
         
-        let physicsBody = SCNPhysicsBody(type: .kinematic, shape: SCNPhysicsShape(geometry: boxGeometry, options: nil))
-        playerNode.physicsBody = physicsBody
-        playerNode.position = SCNVector3(0, 1.0, 0)
+        // Setup position component
+        let initialPosition = SIMD3<Float>(0, 1.0, 0)
+        positionComponents[player.id] = PositionComponent(position: initialPosition)
         
-        scene.rootNode.addChildNode(playerNode)
+        // Setup movement component
+        movementComponents[player.id] = MovementComponent(direction: SIMD3<Float>(0, 0, 0), speed: 2.0)
         
-        cameraNode = SCNNode()
+        // Setup camera component
+        let cameraNode = SCNNode()
         cameraNode.camera = SCNCamera()
-        cameraNode.position = SCNVector3(0, 0.75, 0)
-        playerNode.addChildNode(cameraNode)
+        cameraNode.position = SCNVector3(0, 0.75, 0) // Eye-level
+        sceneView.scene?.rootNode.addChildNode(cameraNode)
+        cameraComponents[player.id] = CameraComponent(cameraNode: cameraNode)
+        
+        // Set active camera
         sceneView.pointOfView = cameraNode
     }
     
+    // Setting up the buttons, but now delegating to MovementSystem for logic
     func setupMovementButtons() {
         let buttonSize: CGFloat = 60
         let buttonSpacing: CGFloat = 20
@@ -134,69 +136,45 @@ class GameViewController: UIViewController {
         self.view.bringSubviewToFront(movementOverlay)
     }
     
+    // Delegate movement logic to MovementSystem
     @objc func moveForward() {
-        direction.z = -1
+        movementSystem.updateMovement(playerId: player.id, movementComponents: &movementComponents, direction: SIMD3<Float>(0, 0, -1))
     }
     
     @objc func moveBackward() {
-        direction.z = 1
+        movementSystem.updateMovement(playerId: player.id, movementComponents: &movementComponents, direction: SIMD3<Float>(0, 0, 1))
     }
     
     @objc func moveLeft() {
-        direction.x = -1
+        movementSystem.updateMovement(playerId: player.id, movementComponents: &movementComponents, direction: SIMD3<Float>(-1, 0, 0))
     }
     
     @objc func moveRight() {
-        direction.x = 1
-    }
-    
-    @objc func rotateLeft() {
-        let rotationAmount: Float = .pi / 16
-        playerNode.eulerAngles.y += rotationAmount
-    }
-    
-    @objc func rotateRight() {
-        let rotationAmount: Float = -.pi / 16
-        playerNode.eulerAngles.y += rotationAmount
+        movementSystem.updateMovement(playerId: player.id, movementComponents: &movementComponents, direction: SIMD3<Float>(1, 0, 0))
     }
     
     @objc func stopMoving() {
-        direction = SIMD3<Float>(0, 0, 0)
+        movementSystem.stopMovement(playerId: player.id, movementComponents: &movementComponents)
     }
     
-    // Update player and camera every frame
-    @objc func update() {
-        let moveSpeed = movementSpeed * 0.1
-        let move = SIMD3<Float>(direction.x * moveSpeed, 0, direction.z * moveSpeed)
-        
-        playerNode.position.x += move.x
-        playerNode.position.z += move.z
-        
-        // Sync the camera's position and rotation with the player node
-        cameraNode.position = SCNVector3(playerNode.position.x, playerNode.position.y + 0.75, playerNode.position.z)
-        cameraNode.eulerAngles.y = playerNode.eulerAngles.y
-    }
-    
-    // Disable edge swipe system gestures
-    func disableSystemGestures() {
-        if let gestureRecognizers = self.view.gestureRecognizers {
-            for recognizer in gestureRecognizers {
-                if recognizer is UIScreenEdgePanGestureRecognizer {
-                    recognizer.isEnabled = false
-                }
-            }
+    @objc func rotateLeft() {
+        // Access camera node through camera component
+        if let cameraComponent = cameraComponents[player.id] {
+            let rotationAmount: Float = .pi / 16
+            cameraComponent.cameraNode.eulerAngles.y += rotationAmount
         }
     }
     
-    override var shouldAutorotate: Bool {
-        return false
+    @objc func rotateRight() {
+        // Access camera node through camera component
+        if let cameraComponent = cameraComponents[player.id] {
+            let rotationAmount: Float = -.pi / 16
+            cameraComponent.cameraNode.eulerAngles.y += rotationAmount
+        }
     }
     
-    override var prefersStatusBarHidden: Bool {
-        return true
-    }
-    
-    override func didReceiveMemoryWarning() {
-        super.didReceiveMemoryWarning()
+    @objc func update() {
+        movementSystem.updatePositions(entities: entities, positions: &positionComponents, movements: movementComponents)
+        cameraSystem.update(entities: entities, positions: positionComponents, cameras: cameraComponents)
     }
 }
